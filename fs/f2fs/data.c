@@ -847,7 +847,7 @@ int f2fs_preallocate_blocks(struct inode *inode, loff_t pos,
 	int err = 0;
 
 	/* convert inline data for Direct I/O*/
-	if (direct_io) {
+	if (dio) {
 		err = f2fs_convert_inline_inode(inode);
 		if (err)
 			return err;
@@ -867,14 +867,9 @@ int f2fs_preallocate_blocks(struct inode *inode, loff_t pos,
 	map.m_next_extent = NULL;
 	map.m_seg_type = NO_CHECK_TYPE;
 
-	if (direct_io) {
-		/* map.m_seg_type = rw_hint_to_seg_type(iocb->ki_hint); */
-		map.m_seg_type = rw_hint_to_seg_type(WRITE_LIFE_NOT_SET);
-		flag = __force_buffered_io(inode, WRITE) ?
+	if (dio)
 					F2FS_GET_BLOCK_PRE_AIO :
 					F2FS_GET_BLOCK_PRE_DIO;
-		goto map_blocks;
-	}
 	if (pos + count > MAX_INLINE_DATA(inode)) {
 		err = f2fs_convert_inline_inode(inode);
 		if (err)
@@ -1149,7 +1144,7 @@ static int get_data_block_dio(struct inode *inode, sector_t iblock,
 			struct buffer_head *bh_result, int create)
 {
 	return __get_data_block(inode, iblock, bh_result, create,
-						F2FS_GET_BLOCK_DEFAULT, NULL,
+						F2FS_GET_BLOCK_DEFAULT, NULL);
 						rw_hint_to_seg_type(
 							WRITE_LIFE_NOT_SET));
 						/* inode->i_write_hint)); */
@@ -1775,13 +1770,13 @@ write:
 		}
 	}
 
-	if (err) {
+	down_write(&F2FS_I(inode)->i_sem);
 		file_set_keep_isize(inode);
 	} else {
 		down_write(&F2FS_I(inode)->i_sem);
 		if (F2FS_I(inode)->last_disk_size < psize)
 			F2FS_I(inode)->last_disk_size = psize;
-		up_write(&F2FS_I(inode)->i_sem);
+	up_write(&F2FS_I(inode)->i_sem);
 	}
 
 done:
@@ -2165,9 +2160,9 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
 	if (f2fs_is_atomic_file(inode) &&
 			!available_free_memory(sbi, INMEM_PAGES)) {
 		err = -ENOMEM;
-		drop_atomic = true;
 		goto fail;
 	}
+
 
 	/*
 	 * We should check this at this moment to avoid deadlock on inode page
@@ -2246,7 +2241,7 @@ repeat:
 fail:
 	f2fs_put_page(page, 1);
 	f2fs_write_failed(mapping, pos + len);
-	if (drop_atomic)
+	if (f2fs_is_atomic_file(inode))
 		drop_inmem_pages_all(sbi);
 	return err;
 }

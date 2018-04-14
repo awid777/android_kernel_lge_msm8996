@@ -1197,6 +1197,9 @@ static int f2fs_collapse_range(struct inode *inode, loff_t offset, loff_t len)
 	if (ret)
 		goto out_unlock;
 
+	/* avoid gc operation during block exchange */
+	down_write(&F2FS_I(inode)->dio_rwsem[WRITE]);
+
 	truncate_pagecache(inode, offset);
 
 	ret = f2fs_do_collapse(inode, pg_start, pg_end);
@@ -1214,6 +1217,7 @@ static int f2fs_collapse_range(struct inode *inode, loff_t offset, loff_t len)
 	if (!ret)
 		f2fs_i_size_write(inode, new_size);
 out_unlock:
+	up_write(&F2FS_I(inode)->dio_rwsem[WRITE]);
 	up_write(&F2FS_I(inode)->i_mmap_sem);
 	up_write(&F2FS_I(inode)->dio_rwsem[WRITE]);
 	return ret;
@@ -1399,6 +1403,9 @@ static int f2fs_insert_range(struct inode *inode, loff_t offset, loff_t len)
 	if (ret)
 		goto out;
 
+	/* avoid gc operation during block exchange */
+	down_write(&F2FS_I(inode)->dio_rwsem[WRITE]);
+
 	truncate_pagecache(inode, offset);
 
 	pg_start = offset >> PAGE_SHIFT;
@@ -1426,6 +1433,8 @@ static int f2fs_insert_range(struct inode *inode, loff_t offset, loff_t len)
 
 	if (!ret)
 		f2fs_i_size_write(inode, new_size);
+
+	up_write(&F2FS_I(inode)->dio_rwsem[WRITE]);
 out:
 	up_write(&F2FS_I(inode)->i_mmap_sem);
 	up_write(&F2FS_I(inode)->dio_rwsem[WRITE]);
@@ -2714,9 +2723,9 @@ static ssize_t f2fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		blk_start_plug(&plug);
 		ret = __generic_file_write_iter(iocb, from);
 		blk_finish_plug(&plug);
-		clear_inode_flag(inode, FI_NO_PREALLOC);
 
 		if (ret > 0)
+			f2fs_update_iostat(F2FS_I_SB(inode), APP_WRITE_IO, ret);
 			f2fs_update_iostat(F2FS_I_SB(inode), APP_WRITE_IO, ret);
 	}
 	inode_unlock(inode);

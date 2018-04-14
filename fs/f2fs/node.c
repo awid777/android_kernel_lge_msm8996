@@ -143,9 +143,11 @@ static struct nat_entry *__alloc_nat_entry(nid_t nid, bool no_fail)
 	struct nat_entry *new;
 
 	if (no_fail)
-		new = f2fs_kmem_cache_alloc(nat_entry_slab, GFP_F2FS_ZERO);
+		new = f2fs_kmem_cache_alloc(nat_entry_slab,
+						GFP_NOFS | __GFP_ZERO);
 	else
-		new = kmem_cache_alloc(nat_entry_slab, GFP_F2FS_ZERO);
+		new = kmem_cache_alloc(nat_entry_slab,
+						GFP_NOFS | __GFP_ZERO);
 	if (new) {
 		nat_set_nid(new, nid);
 		nat_reset_flag(new);
@@ -1948,6 +1950,17 @@ static void remove_free_nid(struct f2fs_sb_info *sbi, nid_t nid)
 		kmem_cache_free(free_nid_slab, i);
 }
 
+	if (set) {
+		if (test_bit_le(nid_ofs, nm_i->free_nid_bitmap[nat_ofs]))
+			return;
+	} else {
+		if (!test_bit_le(nid_ofs, nm_i->free_nid_bitmap[nat_ofs]))
+			return;
+		__clear_bit_le(nid_ofs, nm_i->free_nid_bitmap[nat_ofs]);
+		if (!build)
+			nm_i->free_nid_count[nat_ofs]--;
+	}
+}
 static void scan_nat_page(struct f2fs_sb_info *sbi,
 			struct page *nat_page, nid_t start_nid)
 {
@@ -1991,7 +2004,7 @@ static void scan_curseg_cache(struct f2fs_sb_info *sbi)
 		addr = le32_to_cpu(nat_in_journal(journal, i).block_addr);
 		nid = le32_to_cpu(nid_in_journal(journal, i));
 		if (addr == NULL_ADDR)
-			add_free_nid(sbi, nid, true, false);
+			add_free_nid(sbi, nid, true);
 		else
 			remove_free_nid(sbi, nid);
 	}

@@ -113,9 +113,6 @@ static ssize_t features_show(struct f2fs_attr *a,
 	if (f2fs_sb_has_quota_ino(sb))
 		len += snprintf(buf + len, PAGE_SIZE - len, "%s%s",
 				len ? ", " : "", "quota_ino");
-	if (f2fs_sb_has_inode_crtime(sb))
-		len += snprintf(buf + len, PAGE_SIZE - len, "%s%s",
-				len ? ", " : "", "inode_crtime");
 	len += snprintf(buf + len, PAGE_SIZE - len, "\n");
 	return len;
 }
@@ -123,6 +120,9 @@ static ssize_t features_show(struct f2fs_attr *a,
 static ssize_t current_reserved_blocks_show(struct f2fs_attr *a,
 					struct f2fs_sb_info *sbi, char *buf)
 {
+	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->current_reserved_blocks);
+}
+
 	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->current_reserved_blocks);
 }
 
@@ -165,8 +165,7 @@ static ssize_t f2fs_sbi_store(struct f2fs_attr *a,
 #endif
 	if (a->struct_type == RESERVED_BLOCKS) {
 		spin_lock(&sbi->stat_lock);
-		if (t > (unsigned long)(sbi->user_block_count -
-					sbi->root_reserved_blocks)) {
+		if (t > (unsigned long)sbi->user_block_count) {
 			spin_unlock(&sbi->stat_lock);
 			return -EINVAL;
 		}
@@ -235,7 +234,6 @@ enum feat_id {
 	FEAT_INODE_CHECKSUM,
 	FEAT_FLEXIBLE_INLINE_XATTR,
 	FEAT_QUOTA_INO,
-	FEAT_INODE_CRTIME,
 };
 
 static ssize_t f2fs_feature_show(struct f2fs_attr *a,
@@ -250,10 +248,11 @@ static ssize_t f2fs_feature_show(struct f2fs_attr *a,
 	case FEAT_INODE_CHECKSUM:
 	case FEAT_FLEXIBLE_INLINE_XATTR:
 	case FEAT_QUOTA_INO:
-	case FEAT_INODE_CRTIME:
 		return snprintf(buf, PAGE_SIZE, "supported\n");
 	}
 	return 0;
+}
+
 }
 
 #define F2FS_ATTR_OFFSET(_struct_type, _name, _mode, _show, _store, _offset) \

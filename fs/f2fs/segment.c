@@ -1289,8 +1289,7 @@ static int __issue_discard_cmd(struct f2fs_sb_info *sbi,
 		pend_list = &dcc->pend_list[i];
 
 		mutex_lock(&dcc->cmd_lock);
-		if (list_empty(pend_list))
-			goto next;
+		f2fs_bug_on(sbi, !__check_rb_tree_consistence(sbi, &dcc->root));
 		f2fs_bug_on(sbi, !__check_rb_tree_consistence(sbi, &dcc->root));
 		blk_start_plug(&plug);
 		list_for_each_entry_safe(dc, tmp, pend_list, list) {
@@ -1344,7 +1343,7 @@ static bool __drop_discard_cmd(struct f2fs_sb_info *sbi)
 	return dropped;
 }
 
-void drop_discard_cmd(struct f2fs_sb_info *sbi)
+static unsigned int __wait_one_discard_bio(struct f2fs_sb_info *sbi,
 {
 	__drop_discard_cmd(sbi);
 }
@@ -1798,20 +1797,25 @@ void init_discard_policy(struct discard_policy *dpolicy,
 	dpolicy->sync = true;
 	dpolicy->granularity = granularity;
 
-	dpolicy->max_requests = DEF_MAX_DISCARD_REQUEST;
-	dpolicy->io_aware_gran = MAX_PLIST_NUM;
-
 	if (discard_type == DPOLICY_BG) {
 		dpolicy->min_interval = DEF_MIN_DISCARD_ISSUE_TIME;
 		dpolicy->max_interval = DEF_MAX_DISCARD_ISSUE_TIME;
+		dpolicy->max_requests = DEF_MAX_DISCARD_REQUEST;
+		dpolicy->io_aware_gran = MAX_PLIST_NUM;
 		dpolicy->io_aware = true;
 	} else if (discard_type == DPOLICY_FORCE) {
 		dpolicy->min_interval = DEF_MIN_DISCARD_ISSUE_TIME;
 		dpolicy->max_interval = DEF_MAX_DISCARD_ISSUE_TIME;
+		dpolicy->max_requests = DEF_MAX_DISCARD_REQUEST;
+		dpolicy->io_aware_gran = MAX_PLIST_NUM;
 		dpolicy->io_aware = true;
 	} else if (discard_type == DPOLICY_FSTRIM) {
+		dpolicy->max_requests = DEF_MAX_DISCARD_REQUEST;
+		dpolicy->io_aware_gran = MAX_PLIST_NUM;
 		dpolicy->io_aware = false;
 	} else if (discard_type == DPOLICY_UMOUNT) {
+		dpolicy->max_requests = DEF_MAX_DISCARD_REQUEST;
+		dpolicy->io_aware_gran = MAX_PLIST_NUM;
 		dpolicy->io_aware = false;
 	}
 }
@@ -2524,6 +2528,7 @@ static bool __has_curseg_space(struct f2fs_sb_info *sbi, int type)
 	return false;
 }
 
+#if 0
 int rw_hint_to_seg_type(enum rw_hint hint)
 {
 	switch (hint) {
@@ -2535,6 +2540,7 @@ int rw_hint_to_seg_type(enum rw_hint hint)
 		return CURSEG_WARM_DATA;
 	}
 }
+#endif
 
 static int __get_segment_type_2(struct f2fs_io_info *fio)
 {
@@ -3799,6 +3805,8 @@ int build_segment_manager(struct f2fs_sb_info *sbi)
 	sm_info->trim_sections = DEF_BATCHED_TRIM_SECTIONS;
 
 	INIT_LIST_HEAD(&sm_info->sit_entry_set);
+
+	init_rwsem(&sm_info->curseg_lock);
 
 	init_rwsem(&sm_info->curseg_lock);
 

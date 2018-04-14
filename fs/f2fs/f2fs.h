@@ -283,7 +283,7 @@ enum {
 	ORPHAN_INO,		/* for orphan ino list */
 	APPEND_INO,		/* for append ino list */
 	UPDATE_INO,		/* for update ino list */
-	TRANS_DIR_INO,		/* for trasactions dir ino list */
+	FLUSH_INO,		/* for multiple device flushing */
 	FLUSH_INO,		/* for multiple device flushing */
 	MAX_INO_ENTRY,		/* max. list */
 };
@@ -506,9 +506,10 @@ struct f2fs_flush_device {
 #define DEF_MIN_INLINE_SIZE		1
 static inline int get_extra_isize(struct inode *inode);
 static inline int get_inline_xattr_addrs(struct inode *inode);
+#define F2FS_INLINE_XATTR_ADDRS(inode)	get_inline_xattr_addrs(inode)
 #define MAX_INLINE_DATA(inode)	(sizeof(__le32) *			\
 				(CUR_ADDRS_PER_INODE(inode) -		\
-				get_inline_xattr_addrs(inode) -	\
+				F2FS_INLINE_XATTR_ADDRS(inode) -	\
 				DEF_INLINE_RESERVED_SIZE))
 
 /* for inline dir */
@@ -656,7 +657,7 @@ enum {
 	F2FS_GET_BLOCK_BMAP,
 	F2FS_GET_BLOCK_PRE_DIO,
 	F2FS_GET_BLOCK_PRE_AIO,
-	F2FS_GET_BLOCK_PRECACHE,
+};
 };
 
 /*
@@ -1030,7 +1031,6 @@ enum cp_reason_type {
 	CP_NODE_NEED_CP,
 	CP_FASTBOOT_MODE,
 	CP_SPEC_LOG_NUM,
-	CP_RECOVER_DIR,
 };
 
 enum iostat_type {
@@ -1049,6 +1049,7 @@ enum iostat_type {
 	FS_DISCARD,			/* discard */
 	NR_IO_TYPE,
 };
+
 
 struct f2fs_io_info {
 	struct f2fs_sb_info *sbi;	/* f2fs_sb_info pointer */
@@ -1409,7 +1410,22 @@ static inline bool f2fs_crc_valid(struct f2fs_sb_info *sbi, __u32 blk_crc,
 static inline u32 f2fs_chksum(struct f2fs_sb_info *sbi, u32 crc,
 			      const void *address, unsigned int length)
 {
-	return __f2fs_crc32(sbi, crc, address, length);
+	struct {
+		struct shash_desc shash;
+		char ctx[4];
+	} desc;
+	int err;
+
+	BUG_ON(crypto_shash_descsize(sbi->s_chksum_driver) != sizeof(desc.ctx));
+
+	desc.shash.tfm = sbi->s_chksum_driver;
+	desc.shash.flags = 0;
+	*(u32 *)desc.ctx = crc;
+
+	err = crypto_shash_update(&desc.shash, address, length);
+	BUG_ON(err);
+
+	return *(u32 *)desc.ctx;
 }
 
 static inline struct f2fs_inode_info *F2FS_I(struct inode *inode)
@@ -1918,7 +1934,7 @@ static inline int inc_valid_node_count(struct f2fs_sb_info *sbi,
 	spin_lock(&sbi->stat_lock);
 
 	valid_block_count = sbi->total_valid_block_count +
-					sbi->current_reserved_blocks + 1;
+	if (unlikely(valid_block_count + sbi->current_reserved_blocks >
 
 	if (!__allow_reserved_blocks(sbi, inode))
 		valid_block_count += sbi->root_reserved_blocks;
@@ -2136,11 +2152,11 @@ static inline block_t datablock_addr(struct inode *inode,
 	raw_node = F2FS_NODE(node_page);
 
 	/* from GC path only */
-	if (is_inode) {
-		if (!inode)
+	if (!inode) {
+		if (is_inode)
 			base = offset_in_addr(&raw_node->i);
-		else if (f2fs_has_extra_attr(inode))
-			base = get_extra_isize(inode);
+	} else if (f2fs_has_extra_attr(inode) && is_inode) {
+		base = get_extra_isize(inode);
 	}
 
 	addr_array = blkaddr_in_node(raw_node);
@@ -2402,11 +2418,11 @@ static inline void set_raw_inline(struct inode *inode, struct f2fs_inode *ri)
 		ri->i_inline |= F2FS_INLINE_DOTS;
 	if (is_inode_flag_set(inode, FI_EXTRA_ATTR))
 		ri->i_inline |= F2FS_EXTRA_ATTR;
-	if (is_inode_flag_set(inode, FI_PIN_FILE))
-		ri->i_inline |= F2FS_PIN_FILE;
 }
 
 static inline int f2fs_has_extra_attr(struct inode *inode)
+{
+	return is_inode_flag_set(inode, FI_EXTRA_ATTR);
 {
 	return is_inode_flag_set(inode, FI_EXTRA_ATTR);
 }
@@ -2418,7 +2434,7 @@ static inline int f2fs_has_inline_xattr(struct inode *inode)
 
 static inline unsigned int addrs_per_inode(struct inode *inode)
 {
-	return CUR_ADDRS_PER_INODE(inode) - get_inline_xattr_addrs(inode);
+	return CUR_ADDRS_PER_INODE(inode) - F2FS_INLINE_XATTR_ADDRS(inode);
 }
 
 static inline void *inline_xattr_addr(struct inode *inode, struct page *page)
@@ -2426,7 +2442,7 @@ static inline void *inline_xattr_addr(struct inode *inode, struct page *page)
 	struct f2fs_inode *ri = F2FS_INODE(page);
 
 	return (void *)&(ri->i_addr[DEF_ADDRS_PER_INODE -
-					get_inline_xattr_addrs(inode)]);
+					F2FS_INLINE_XATTR_ADDRS(inode)]);
 }
 
 static inline int inline_xattr_size(struct inode *inode)
@@ -2596,17 +2612,17 @@ static inline void *kvzalloc(size_t size, gfp_t flags)
 	return ret;
 }
 
-enum rw_hint {
-	WRITE_LIFE_NOT_SET	= 0,
-	WRITE_LIFE_NONE		= 1, /* RWH_WRITE_LIFE_NONE */
-	WRITE_LIFE_SHORT	= 2, /* RWH_WRITE_LIFE_SHORT */
-	WRITE_LIFE_MEDIUM	= 3, /* RWH_WRITE_LIFE_MEDIUM */
-	WRITE_LIFE_LONG		= 4, /* RWH_WRITE_LIFE_LONG */
-	WRITE_LIFE_EXTREME	= 5, /* RWH_WRITE_LIFE_EXTREME */
-};
-
-static inline void wbc_init_bio(struct writeback_control *wbc, struct bio *bio)
+static inline int get_extra_isize(struct inode *inode)
 {
+	return F2FS_I(inode)->i_extra_isize / sizeof(__le32);
+}
+
+static inline int f2fs_sb_has_flexible_inline_xattr(struct super_block *sb);
+static inline int get_inline_xattr_addrs(struct inode *inode)
+{
+	return F2FS_I(inode)->i_inline_xattr_size;
+}
+
 }
 
 static inline void wbc_account_io(struct writeback_control *wbc,

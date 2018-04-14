@@ -84,6 +84,11 @@ static struct inode *f2fs_new_inode(struct inode *dir, umode_t mode)
 		F2FS_I(inode)->i_extra_isize = F2FS_TOTAL_EXTRA_ATTR_SIZE;
 	}
 
+	if (f2fs_sb_has_extra_attr(sbi->sb)) {
+		set_inode_flag(inode, FI_EXTRA_ATTR);
+		F2FS_I(inode)->i_extra_isize = F2FS_TOTAL_EXTRA_ATTR_SIZE;
+	}
+
 	if (test_opt(sbi, INLINE_XATTR))
 		set_inode_flag(inode, FI_INLINE_XATTR);
 
@@ -246,6 +251,11 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
 			F2FS_I(old_dentry->d_inode)->i_projid)))
 		return -EXDEV;
 
+	if (is_inode_flag_set(dir, FI_PROJ_INHERIT) &&
+			(!projid_eq(F2FS_I(dir)->i_projid,
+			F2FS_I(old_dentry->d_inode)->i_projid)))
+		return -EXDEV;
+
 	dquot_initialize(dir);
 
 	f2fs_balance_fs(sbi, true);
@@ -347,9 +357,13 @@ static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,
 
 	trace_f2fs_lookup_start(dir, dentry, flags);
 
+		err = fscrypt_get_encryption_info(dir);
+
 	err = fscrypt_prepare_lookup(dir, dentry, flags);
 	if (err)
 		goto out;
+		if (err && err != -ENOKEY)
+			goto out;
 
 	if (dentry->d_name.len > F2FS_NAME_LEN) {
 		err = -ENAMETOOLONG;
@@ -775,6 +789,12 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (unlikely(f2fs_cp_error(sbi)))
 		return -EIO;
 
+
+	if (is_inode_flag_set(new_dir, FI_PROJ_INHERIT) &&
+			(!projid_eq(F2FS_I(new_dir)->i_projid,
+			F2FS_I(old_dentry->d_inode)->i_projid)))
+		return -EXDEV;
+
 	if (is_inode_flag_set(new_dir, FI_PROJ_INHERIT) &&
 			(!projid_eq(F2FS_I(new_dir)->i_projid,
 			F2FS_I(old_dentry->d_inode)->i_projid)))
@@ -951,6 +971,13 @@ static int f2fs_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 
 	if (unlikely(f2fs_cp_error(sbi)))
 		return -EIO;
+
+
+	if ((is_inode_flag_set(new_dir, FI_PROJ_INHERIT) &&
+			!projid_eq(F2FS_I(new_dir)->i_projid,
+			F2FS_I(old_dentry->d_inode)->i_projid)) ||
+	    (is_inode_flag_set(new_dir, FI_PROJ_INHERIT) &&
+			!projid_eq(F2FS_I(old_dir)->i_projid,
 
 	if ((is_inode_flag_set(new_dir, FI_PROJ_INHERIT) &&
 			!projid_eq(F2FS_I(new_dir)->i_projid,

@@ -360,9 +360,9 @@ static int parse_options(struct super_block *sb, char *options)
 	substring_t args[MAX_OPT_ARGS];
 	char *p, *name;
 	int arg = 0;
-	kuid_t uid;
-	kgid_t gid;
 #ifdef CONFIG_QUOTA
+	int ret;
+#endif
 	int ret;
 #endif
 
@@ -1086,7 +1086,7 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_blocks = total_count - start_count;
 	buf->f_bfree = user_block_count - valid_user_blocks(sbi) -
 						sbi->current_reserved_blocks;
-	if (buf->f_bfree > sbi->root_reserved_blocks)
+						sbi->current_reserved_blocks;
 		buf->f_bavail = buf->f_bfree - sbi->root_reserved_blocks;
 	else
 		buf->f_bavail = 0;
@@ -1770,12 +1770,12 @@ void f2fs_quota_off_umount(struct super_block *sb)
 		f2fs_quota_off(sb, type);
 }
 
-#if 0	/* not support */
-static int f2fs_get_projid(struct inode *inode, kprojid_t *projid)
+int f2fs_get_projid(struct inode *inode, kprojid_t *projid)
 {
 	*projid = F2FS_I(inode)->i_projid;
 	return 0;
 }
+
 #endif
 
 static const struct dquot_operations f2fs_quota_operations = {
@@ -2558,11 +2558,11 @@ try_onemore:
 	sb->s_fs_info = sbi;
 	sbi->raw_super = raw_super;
 
-	sbi->s_resuid = make_kuid(&init_user_ns, F2FS_DEF_RESUID);
-	sbi->s_resgid = make_kgid(&init_user_ns, F2FS_DEF_RESGID);
-
 	/* precompute checksum seed for metadata */
 	if (f2fs_sb_has_inode_chksum(sb))
+		sbi->s_chksum_seed = f2fs_chksum(sbi, ~0, raw_super->uuid,
+						sizeof(raw_super->uuid));
+
 		sbi->s_chksum_seed = f2fs_chksum(sbi, ~0, raw_super->uuid,
 						sizeof(raw_super->uuid));
 
@@ -2605,7 +2605,7 @@ try_onemore:
 		sb->s_qcop = &f2fs_quotactl_ops;
 #if 0	/* not support */
 	sb->s_quota_types = QTYPE_MASK_USR | QTYPE_MASK_GRP | QTYPE_MASK_PRJ;
-
+#endif
 	if (f2fs_sb_has_quota_ino(sbi->sb)) {
 		for (i = 0; i < MAXQUOTAS; i++) {
 			if (f2fs_qf_ino(sbi->sb, i))
@@ -2761,8 +2761,6 @@ try_onemore:
 
 	err = f2fs_build_stats(sbi);
 	if (err)
-		goto free_node_inode;
-
 	/* read root inode and dentry */
 	root = f2fs_iget(sb, F2FS_ROOT_INO(sbi));
 	if (IS_ERR(root)) {
@@ -2885,6 +2883,10 @@ free_meta:
 	 * falls into an infinite loop in sync_meta_pages().
 	 */
 	truncate_inode_pages_final(META_MAPPING(sbi));
+#ifdef CONFIG_QUOTA
+free_sysfs:
+#endif
+	f2fs_unregister_sysfs(sbi);
 #ifdef CONFIG_QUOTA
 free_sysfs:
 #endif
