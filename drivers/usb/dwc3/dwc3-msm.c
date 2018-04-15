@@ -295,6 +295,7 @@ struct dwc3_msm {
 	u32			bus_perf_client;
 	struct msm_bus_scale_pdata	*bus_scale_table;
 	struct power_supply	usb_psy;
+	enum power_supply_type	usb_supply_type;
 #ifdef CONFIG_LGE_USB_TYPE_C
 	struct power_supply	*typec_psy;
 #endif
@@ -3261,7 +3262,6 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 		else
 			val->intval = psy->type;
 		break;
-	case POWER_SUPPLY_PROP_REAL_TYPE:
 #endif
 		val->intval = psy->type;
 		break;
@@ -3455,10 +3455,6 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 #ifdef CONFIG_LGE_PM
 	case POWER_SUPPLY_PROP_REAL_TYPE:
 #endif
-		 * so that they can be recongized as AC chargers by healthd.
-		 * Don't report UNKNOWN charger type to prevent healthd missing
-		 * detecting this power_supply status change.
-		 */
 		if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3
 			|| mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP)
 			psy->type = POWER_SUPPLY_TYPE_USB_DCP;
@@ -4971,12 +4967,6 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 			mdwc->chg_type == DWC3_PROPRIETARY_CHARGER)
 		power_supply_type = POWER_SUPPLY_TYPE_USB_DCP;
 #endif
-	else
-		power_supply_type = POWER_SUPPLY_TYPE_UNKNOWN;
-
-	propval.intval = power_supply_type;
-	mdwc->usb_psy.set_property(&mdwc->usb_psy,
-			POWER_SUPPLY_PROP_REAL_TYPE, &propval);
 
 skip_psy_type:
 
