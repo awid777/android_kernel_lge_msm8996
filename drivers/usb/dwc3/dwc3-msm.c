@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -3251,6 +3251,9 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = mdwc->online;
 		break;
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		val->intval = mdwc->usb_supply_type;
+		break;
 	case POWER_SUPPLY_PROP_TYPE:
 #ifdef CONFIG_LGE_PM
 		if (psy->type == POWER_SUPPLY_TYPE_UNKNOWN)
@@ -3452,9 +3455,18 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 #ifdef CONFIG_LGE_PM
 	case POWER_SUPPLY_PROP_REAL_TYPE:
 #endif
-	case POWER_SUPPLY_PROP_TYPE:
-		psy->type = val->intval;
-		switch (psy->type) {
+		 * so that they can be recongized as AC chargers by healthd.
+		 * Don't report UNKNOWN charger type to prevent healthd missing
+		 * detecting this power_supply status change.
+		 */
+		if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3
+			|| mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP)
+			psy->type = POWER_SUPPLY_TYPE_USB_DCP;
+		else if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_UNKNOWN)
+			psy->type = POWER_SUPPLY_TYPE_USB;
+		else
+			psy->type = mdwc->usb_supply_type;
+		switch (mdwc->usb_supply_type) {
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->chg_type = DWC3_SDP_CHARGER;
 			mdwc->voltage_max = MICRO_5V;
@@ -4962,7 +4974,9 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 	else
 		power_supply_type = POWER_SUPPLY_TYPE_UNKNOWN;
 
-	power_supply_set_supply_type(&mdwc->usb_psy, power_supply_type);
+	propval.intval = power_supply_type;
+	mdwc->usb_psy.set_property(&mdwc->usb_psy,
+			POWER_SUPPLY_PROP_REAL_TYPE, &propval);
 
 skip_psy_type:
 
