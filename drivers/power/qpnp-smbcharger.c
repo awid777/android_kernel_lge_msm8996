@@ -6295,6 +6295,9 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 	}
 #endif
 
+	if (!chip->skip_usb_notification)
+		power_supply_set_supply_type(chip->usb_psy, type);
+
 
 	/*
 	 * otherwise if it is unknown, remove vote
@@ -8501,7 +8504,6 @@ static void smbchg_external_power_changed(struct power_supply *psy)
 #endif
 #else
 	rc = chip->usb_psy->get_property(chip->usb_psy,
-				POWER_SUPPLY_PROP_CURRENT_MAX, &prop);
 	if (rc == 0)
 		current_limit = prop.intval / 1000;
 #endif

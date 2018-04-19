@@ -149,7 +149,9 @@ static ssize_t power_supply_show_property(struct device *dev,
 	else if (off == POWER_SUPPLY_PROP_TYPE
 			|| off == POWER_SUPPLY_PROP_REAL_TYPE)
 #else
-	else if (off == POWER_SUPPLY_PROP_TYPE)
+
+	else if (off == POWER_SUPPLY_PROP_TYPE ||
+			off == POWER_SUPPLY_PROP_REAL_TYPE)
 #endif
 		return sprintf(buf, "%s\n", type_text[value.intval]);
 	else if (off == POWER_SUPPLY_PROP_SCOPE)
