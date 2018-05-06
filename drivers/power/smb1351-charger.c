@@ -3704,9 +3704,15 @@ static int smb1351_update_usb_supply_icl(struct smb1351_charger *chip)
 {
 	int rc, type, icl;
 	union power_supply_propval pval = {0, };
-
+#ifdef CONFIG_LGE_PM
 	rc = chip->usb_psy->get_property(chip->usb_psy,
 			POWER_SUPPLY_PROP_REAL_TYPE, &pval);
+#else
+	rc = chip->usb_psy->get_property(chip->usb_psy,
+			POWER_SUPPLY_PROP_TYPE, &pval);
+#endif
+	if (rc) {
+		pr_err("Get USB supply type failed, rc=%d\n", rc);
 		return rc;
 	}
 	type = pval.intval;

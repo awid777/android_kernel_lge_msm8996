@@ -3593,8 +3593,6 @@ dwc3_msm_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
-	case POWER_SUPPLY_PROP_REAL_TYPE:
-
 #ifdef CONFIG_LGE_PM
 	case POWER_SUPPLY_PROP_REAL_TYPE:
 #endif
@@ -4945,8 +4943,6 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 #ifdef CONFIG_LGE_PM_CABLE_DETECTION
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 #endif
-	union power_supply_propval propval;
-
 	if (mdwc->charging_disabled)
 		return 0;
 

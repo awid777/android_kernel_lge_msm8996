@@ -419,8 +419,6 @@ static void cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
 	regs->pc += 4;
 }
 
-		regs->regs[rt] = read_sysreg(cntpct_el0);
-
 asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
 {
 	if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTVCT) {
